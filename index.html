@@ -23,84 +23,478 @@
 			body {
 				font-family: 'Inter', sans-serif;
 			}
+
+            img {
+                max-width: 100%;
+                height: auto;
+            }
+
+            .image-table {
+                width: 100%;
+                margin: 24px auto;
+                table-layout: fixed;
+                border-collapse: separate;
+                border-spacing: 16px 24px;
+                text-align: center;
+            }
+
+            .image-table td {
+                width: 50%;
+                padding: 0;
+                vertical-align: top;
+                text-align: center;
+            }
+
+            .image-table figure {
+                width: 100%;
+                max-width: 400px;
+                margin: 0 auto;
+            }
+
+            .image-table img {
+                display: block;
+                width: 100%;
+                height: auto;
+                margin: 0 auto;
+            }
+
+            .image-table figcaption {
+                margin: 10px auto 0;
+                line-height: 1.5;
+                text-align: center;
+                overflow-wrap: anywhere;
+            }
+
+            .image-table td[colspan="2"] figure {
+                width: calc(50% - 8px);
+            }
+
+            @media screen and (max-width: 700px) {
+                .image-table, .image-table tbody, .image-table tr,
+                .image-table td {
+                    display: block;
+                    width: 100%;
+                }
+
+                .image-table {
+                    border-spacing: 0;
+                }
+
+                .image-table td {
+                    margin-bottom: 24px;
+                }
+
+                .image-table td[colspan="2"] figure {
+                    width: 100%;
+                }
+            }
+
+            @media print {
+                .image-table tr, .image-table figure {
+                    break-inside: avoid;
+                }
+            }
 		</style>
 	</head>
 	<body>
 		<div class="container">
 		<h1>CS184/284A Fall 2026 Homework 3 Write-Up</h1>
-		<div style="text-align: center;">Names: </div>
+		<div style="text-align: center;">Names: Jacob Lopez</div>
 
 		<br>
 
-		Link to webpage: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
-		Link to GitHub repository: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
+		Webpage: <a href="https://cal-cs184-student.github.io/hw3-jacoblopez-writeup/">https://cal-cs184-student.github.io/hw3-jacoblopez-writeup/</a><br>
+		GitHub Repository: <a href="https://github.com/cal-cs184-student/hw3-jacoblopez-writeup">https://github.com/cal-cs184-student/hw3-jacoblopez-writeup</a>
 		
 		<figure>
 			<img src="assets/cornell.png" alt="Cornell Boxes with Bunnies" style="width:70%"/>
-			<figcaption>You can add images with captions!</figcaption>
+			<figcaption>Provided Cornell-box reference image.</figcaption>
 		</figure>
 
-		<!--
-		We've already added one heading per part, to make your write-up as navigable when grading. Please fit your write-up within these sections!
-		-->
+
 
 		<h2>Overview</h2>
-		Give a high-level overview of what you implemented in this homework. Think about what you've built as a whole. Share your thoughts on what interesting things you've learned from completing the homework.
+<p>This project builds a path tracer from camera rays and primitive intersections through global illumination. The BVH makes intersection tests faster, importance sampling reduces wasted lighting samples, and adaptive sampling spends less time on pixels that have converged.</p>
 
 		<h2>Part 1: Ray Generation and Scene Intersection</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+<p>Each pixel uses <code>ns_aa</code> random offsets from the uniform square sampler. Dividing the resulting positions by image width and height gives normalized coordinates with the origin at the bottom left. The pixel stores the average RGB radiance and the number of samples taken.</p>
+<p>The pinhole camera looks along its local negative z axis. Normalized image coordinates \((x,y)\) map to the sensor point</p>
+\[
+\mathbf{s}=\left((2x-1)\tan\frac{h\pi}{360},\ (2y-1)\tan\frac{v\pi}{360},\ -1\right),
+\]
+<p>Here, \(h\) and \(v\) are the horizontal and vertical fields of view in degrees. The camera matrix rotates this direction into world space, where it is normalized. The ray starts at the camera position and uses the near and far clipping distances. This follows the <a href="https://cs184.eecs.berkeley.edu/fa26/assets/lectures/09-ray-tracing-acceleration.pdf">ray tracing lecture</a>.</p>
+<p>Part 1 initially checks every primitive. Each hit shortens <code>max_t</code> so that only the closest intersection remains. The figures map its normal to RGB with \(\mathbf{c}=(\mathbf{n}+\mathbf{1})/2\), while missed rays return black. These colors show surface orientation. The BVH added in Part 2 preserves this shading.</p>
 
-		<p>Here is an example 2x2 gridlike structure using an HTML table. Each <b>tr</b> is a row and each <b>td</b> is a column in that row. You might find this useful for framing and showing your result images in an organized fashion.</p>
+<p>Möller–Trumbore solves for the ray distance and barycentric coordinates. With triangle edges \(\mathbf{e}_1=\mathbf{p}_2-\mathbf{p}_1\) and \(\mathbf{e}_2=\mathbf{p}_3-\mathbf{p}_1\), ray origin \(\mathbf{o}\), and direction \(\mathbf{d}\),</p>
+\[
+\mathbf{o}+t\mathbf{d}=\mathbf{p}_1+u\mathbf{e}_1+v\mathbf{e}_2.
+\]
+<p>Define \(\mathbf{p}=\mathbf{d}\times\mathbf{e}_2\), \(\Delta=\mathbf{e}_1\cdot\mathbf{p}\), \(\mathbf{s}=\mathbf{o}-\mathbf{p}_1\), and \(\mathbf{q}=\mathbf{s}\times\mathbf{e}_1\). Then</p>
+\[
+u=\frac{\mathbf{s}\cdot\mathbf{p}}{\Delta},\qquad
+v=\frac{\mathbf{d}\cdot\mathbf{q}}{\Delta},\qquad
+t=\frac{\mathbf{e}_2\cdot\mathbf{q}}{\Delta}.
+\]
+<p>A zero determinant rejects parallel rays and degenerate triangles. A hit requires \(u\geq0\), \(v\geq0\), \(u+v\leq1\), and \(t\) within the ray interval. Either determinant sign is accepted, allowing hits from both sides.</p>
+<p>An accepted hit updates <code>max_t</code> and stores the distance, primitive, material, and normalized interpolated normal \((1-u-v)\mathbf{n}_1+u\mathbf{n}_2+v\mathbf{n}_3\). The boolean intersection function uses the same calculation without building a hit record.</p>
+
+<p>For a sphere, let \(\mathbf{s}=\mathbf{o}-\mathbf{c}\), where \(\mathbf{c}\) is its center and \(R\) its radius. Substitution gives \(at^2+2bt+c=0\), with \(a=\mathbf{d}\cdot\mathbf{d}\), \(b=\mathbf{s}\cdot\mathbf{d}\), and \(c=\mathbf{s}\cdot\mathbf{s}-R^2\). A negative discriminant means no hit.</p>
+<p>To reduce cancellation, the roots are computed as \(q/a\) and \(c/q\), where \(q=-b-\mathrm{copysign}(\sqrt{b^2-ac},b)\). If \(q=0\), both roots are \(-b/a\). The nearest root within the ray interval is selected, including the exit root for rays starting inside. The normal points from the center to the hit.</p>
+
+<p>The code compiled with Apple Clang. Checks passed for camera transforms, clipping, triangle boundaries and degeneracies, sphere tangencies and interior rays, and pixel sample counts. A Cornell spheres test render was also inspected.</p>
+<p>These normal renders use 480 × 360 pixels, 64 samples per pixel, and eight threads. The teapot and banana are small meshes with about 2,500 polygons each, while the spheres test analytic intersections. A saved camera frames the whole teapot without changing its geometry.</p>
 		<div style="display: flex; flex-direction: column; align-items: center;">
-			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			<table class="image-table">
 			  <tr>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
+				<td>
+<figure><img src="assets/part1-teapot.png" alt="Normal shading of the teapot mesh" width="480" height="360"/>
+				  <figcaption><code>teapot.dae</code>: a small curved mesh with a handle, spout, and lid.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part1-spheres.png" alt="Normal shading of two spheres in a Cornell box" width="480" height="360"/>
+				  <figcaption><code>CBspheres_lambertian.dae</code>: analytic sphere intersections together with triangle walls.</figcaption></figure>
+</td>
 			  </tr>
 			  <tr>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
+				<td colspan="2">
+<figure><img src="assets/part1-banana.png" alt="Normal shading of the banana mesh" width="480" height="360"/>
+				  <figcaption><code>banana.dae</code>: barycentrically interpolated vertex normals on a curved triangle mesh.</figcaption></figure>
+</td>
 			  </tr>
 			</table>
 		</div>
-		
+
 		<h2>Part 2: Bounding Volume Hierarchy</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+<p>Each BVH node stores a bounding box and a range of primitives. Ranges of at most four primitives become leaves. Larger ranges split at the median along the longest axis of their centroid bounds using <code>std::nth_element</code>, then recurse.</p>
+<p>The median keeps the tree balanced even when centroids coincide. The longest axis helps separate the children, but does not guarantee minimal overlap. Construction takes expected O(n log n) work. Traversal can still take O(n) when many boxes overlap.</p>
+
+<p>The box test intersects the three slab intervals with the ray and caller intervals. For a zero direction component, the origin must lie inside that slab. This avoids division by zero and accepts rays inside or touching a box. A failed test leaves the caller interval unchanged.</p>
+<p>Traversal skips missed boxes and visits the nearer child first. It then checks the other child against the updated <code>max_t</code>, since the first box entered may not contain the closest primitive. Shadow queries stop at any hit. This follows the <a href="https://cs184.eecs.berkeley.edu/fa26/assets/lectures/09-ray-tracing-acceleration.pdf">acceleration lecture</a>.</p>
+
+<p>These figures use 16 samples per pixel at 480 × 360, with normal shading and adaptive sampling disabled. Beast has 64,618 source polygons and adds a detailed character mesh alongside dragon and Lucy. A saved camera keeps its head, hands, and feet inside the frame.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part2-beast.png" alt="Beast mesh: BVH-accelerated normal shading." width="480" height="360"/>
+				  <figcaption>Beast mesh: BVH-accelerated normal shading.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part2-dragon.png" alt="Dragon mesh: BVH-accelerated normal shading." width="480" height="360"/>
+				  <figcaption>Dragon mesh: BVH-accelerated normal shading.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td colspan="2">
+<figure><img src="assets/part2-lucy.png" alt="Lucy in a Cornell box: BVH-accelerated normal shading." width="480" height="360"/>
+				  <figcaption>Lucy in a Cornell box: BVH-accelerated normal shading.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>Each timing is the median of three runs on the local Apple Silicon Mac at 480 × 360, one sample per pixel, and one thread. Both builds use normal shading, identical compiler settings, and no adaptive sampling. The brute force build checks every primitive without box rejection. Timings exclude loading, BVH construction, and image writing. Raw logs are in <code>assets/logs/</code>.</p>
+<table style="width: 100%; text-align: center; border-collapse: collapse;"><thead><tr><th>Scene</th><th>Brute force (s)</th><th>BVH (s)</th><th>Speedup</th></tr></thead><tbody id="bvh-timings"><tr><td>banana</td><td>1.4763</td><td>0.0782</td><td>18.9×</td></tr><tr><td>cow</td><td>3.6292</td><td>0.0645</td><td>56.3×</td></tr><tr><td>beetle</td><td>4.5807</td><td>0.0730</td><td>62.7×</td></tr></tbody></table>
+<p>The BVH speeds up these scenes by rejecting whole groups of primitives. The gain depends on both primitive count and spatial arrangement. Using identical rendering settings isolates the benefit of acceleration, which also reduces the cost of shadow and indirect rays.</p>
 
 		<h2>Part 3: Direct Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+<p>The diffuse BSDF is \(\rho/\pi\), so integrating its cosine weighted response returns the reflectance \(\rho\). Zero bounce radiance is surface emission. Direct reflection estimates</p>
+\[
+L_o(\mathbf{x},\omega_o)=\int_{H^2}f_r(\omega_o,\omega_i)L_i(\mathbf{x},\omega_i)\cos\theta_i\,d\omega_i.
+\]
+<p>BSDF values and cosines use a local frame whose z axis is the surface normal. Rays and light directions use world space. The <a href="https://cs184.eecs.berkeley.edu/fa26/assets/lectures/11-radiometry.pdf">radiometry lecture</a> explains the cosine term, and the <a href="https://cs184.eecs.berkeley.edu/fa26/assets/lectures/12-integration.pdf">Monte Carlo lecture</a> explains division by the sampling PDF.</p>
+
+<p>Uniform hemisphere sampling uses N directions, where N is the light count times the samples per light. Each ray reads emission from its first hit and contributes \(f_r L_e\cos\theta/p\), with \(p=1/(2\pi)\). The results are averaged. <code>EPS_F</code> prevents self intersection. Most samples miss small lights, and random rays cannot find ideal point lights.</p>
+
+<p>Importance sampling asks each light for a direction, radiance, distance, and PDF. Samples below the surface or with nonpositive PDFs are rejected. Shadow rays run from <code>EPS_F</code> to the light distance minus <code>EPS_F</code>. Visible samples contribute \(f_r L_i\cos\theta/p\). Contributions are averaged per light and summed. Delta lights use one sample, while area lights use the requested count.</p>
+
+<p>The comparisons use 64 camera samples, 32 samples per light, depth one, and no adaptive sampling. Hemisphere sampling leaves visible grain across the walls and objects. Light sampling produces smoother surfaces and shadows because it samples the emitter directly. These Cornell scenes have area lights and matching emissive geometry, so both estimators can sample the same source. The area light emits in one direction, which also explains differences near the ceiling emitter.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part3-bunny-hemisphere.png" alt="Bunny: hemisphere sampling; 64 spp, 32 samples per light, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny: hemisphere sampling, 64 spp, 32 samples per light, depth 1.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part3-bunny-importance.png" alt="Bunny: importance sampling; 64 spp, 32 samples per light, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny: importance sampling, 64 spp, 32 samples per light, depth 1.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part3-spheres-hemisphere.png" alt="Spheres: hemisphere sampling; 64 spp, 32 samples per light, depth 1." width="480" height="360"/>
+				  <figcaption>Spheres: hemisphere sampling, 64 spp, 32 samples per light, depth 1.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part3-spheres-importance.png" alt="Spheres: importance sampling; 64 spp, 32 samples per light, depth 1." width="480" height="360"/>
+				  <figcaption>Spheres: importance sampling, 64 spp, 32 samples per light, depth 1.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>The bunny sweep uses one camera sample and 1, 4, 16, or 64 samples per area light. The speckled shadow around the feet becomes smoother as the light sample count increases. Standard error falls roughly as \(1/\sqrt{N}\), so four times as many samples halves it. Jagged silhouettes remain because the camera still takes only one sample.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part3-bunny-light-1.png" alt="Bunny soft shadows: 1 spp, 1 light sample, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny soft shadows: 1 spp, 1 light sample, depth 1.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part3-bunny-light-4.png" alt="Bunny soft shadows: 1 spp, 4 light samples, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny soft shadows: 1 spp, 4 light samples, depth 1.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part3-bunny-light-16.png" alt="Bunny soft shadows: 1 spp, 16 light samples, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny soft shadows: 1 spp, 16 light samples, depth 1.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part3-bunny-light-64.png" alt="Bunny soft shadows: 1 spp, 64 light samples, depth 1." width="480" height="360"/>
+				  <figcaption>Bunny soft shadows: 1 spp, 64 light samples, depth 1.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 4: Global Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+<p>Indirect lighting samples the diffuse BSDF with \(p(\omega_i)=\cos\theta_i/\pi\). The sampled direction becomes a world space ray with one less remaining bounce. Returned radiance is weighted by \(f_r\cos\theta_i/p\), which simplifies to reflectance \(\rho\) for this sampler.</p>
+<p>Accumulation adds direct lighting at every visited surface. Without accumulation, only the last permitted surface contributes, isolating one bounce order. Depth zero shows emission, depth one direct reflection, and depth two the first indirect reflection. Camera emission appears only in accumulated renders or the isolated zeroth bounce. Recursive hits do not add emission again, since direct lighting already accounts for it.</p>
+<p>The indirect only build omits camera emission and direct lighting at the first hit, keeping bounce two onward. In Wall-E, direct light dominates the exposed panels. The dimmer indirect image shows reflected light around the tracks, neck, and base. Combining them brightens these regions without the strong color bleeding seen in the Cornell box.</p>
+
+<p>The first indirect bounce is always attempted when depth allows it. Later continuations survive with probability 0.65, and surviving contributions are divided by 0.65 to preserve their expectation. Direct lighting at the current surface is unchanged. Roulette does not remove bias from the depth cap. The isolated and accumulated bounce comparisons disable roulette.</p>
+<p>This follows the recursive rendering equation in the <a href="https://cs184.eecs.berkeley.edu/fa26/assets/lectures/13-global-illumination-path-tracing.pdf">global illumination lecture</a>. The 1024 spp examples pair the Cornell bunny with the supplied Wall-E scene. The bunny shows red and blue color bleeding, while Wall-E adds detailed surfaces and narrow gaps where reflected light matters.</p>
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-global.png" alt="Bunny: global illumination, 1024 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: global illumination, 1024 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-wall-e-global.png" alt="Wall-E: global illumination, 1024 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: global illumination, 1024 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part4-wall-e-direct.png" alt="Wall-E: direct reflection plus visible emission, 1024 spp, 4 light samples, depth 1." width="480" height="360"/>
+				  <figcaption>Wall-E: direct reflection plus visible emission, 1024 spp, 4 light samples, depth 1.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-wall-e-indirect.png" alt="Wall-E: only bounce orders 2–5, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: only bounce orders 2–5, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>Each row compares bounce m alone with bounces zero through m at 1024 spp and four light samples, without roulette. The second bounce carries light into areas hidden from the source. The third reflects that light again. Wall colors transfer between surfaces, while absorption weakens later contributions. Basic rasterization with local shading lacks this exchange of light between surfaces. Accumulated images should brighten as bounces are added, though sampling noise can obscure small differences.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-0.png" alt="Only bounce 0; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 0, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-0.png" alt="Bounces 0–0; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–0, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-1.png" alt="Only bounce 1; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 1, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-1.png" alt="Bounces 0–1; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–1, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-2.png" alt="Only bounce 2; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 2, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-2.png" alt="Bounces 0–2; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–2, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-3.png" alt="Only bounce 3; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 3, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-3.png" alt="Bounces 0–3; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–3, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-4.png" alt="Only bounce 4; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 4, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-4.png" alt="Bounces 0–4; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–4, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-isolated-5.png" alt="Only bounce 5; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Only bounce 5, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-accum-5.png" alt="Bounces 0–5; 1024 spp, 4 light samples, roulette disabled." width="480" height="360"/>
+				  <figcaption>Bounces 0–5, 1024 spp, 4 light samples, roulette disabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>This sweep uses 1024 spp and four light samples at depths 0, 1, 2, 3, 4, and 100. Indirect lighting begins at depth two. Larger caps allow longer paths, but roulette ends most paths earlier. Later bounces should change the result less because each diffuse reflection reduces throughput.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-rr-0.png" alt="Bunny: maximum depth 0, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 0, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-rr-1.png" alt="Bunny: maximum depth 1, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 1, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-rr-2.png" alt="Bunny: maximum depth 2, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 2, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-rr-3.png" alt="Bunny: maximum depth 3, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 3, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part4-bunny-rr-4.png" alt="Bunny: maximum depth 4, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 4, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-bunny-rr-100.png" alt="Bunny: maximum depth 100, 1024 spp, 4 light samples, roulette enabled." width="480" height="360"/>
+				  <figcaption>Bunny: maximum depth 100, 1024 spp, 4 light samples, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>The Wall-E sample sweep fixes depth five and four samples per light, with adaptive sampling disabled. More camera samples reduce noise on the body, tracks, and ground. Increasing from 1 to 1024 spp gives an expected reduction in standard error of about 32 times, but cannot fix depth truncation. The final panel reuses the Wall-E global illumination render.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-1.png" alt="Wall-E: 1 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 1 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-2.png" alt="Wall-E: 2 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 2 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-4.png" alt="Wall-E: 4 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 4 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-8.png" alt="Wall-E: 8 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 8 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-16.png" alt="Wall-E: 16 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 16 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part4-wall-e-spp-64.png" alt="Wall-E: 64 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 64 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			  <tr>
+				<td colspan="2">
+<figure><img src="assets/part4-wall-e-global.png" alt="Wall-E: 1024 spp, 4 light samples, depth 5, roulette enabled." width="480" height="360"/>
+				  <figcaption>Wall-E: 1024 spp, 4 light samples, depth 5, roulette enabled.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 5: Adaptive Sampling</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+<p>Adaptive sampling tracks luminance mean μ and squared deviations M₂ using Welford's updates: \(\delta=x_n-\mu_{n-1}\), \(\mu_n=\mu_{n-1}+\delta/n\), and \(M_{2,n}=M_{2,n-1}+\delta(x_n-\mu_n)\). This gives the assignment's sample variance while avoiding cancellation from subtracting large, nearly equal values.</p>
+\[
+s^2=\frac{M_2}{n-1},\qquad I=1.96\sqrt{\frac{s^2}{n}},\qquad I\leq\text{maxTolerance}\,\mu.
+\]
+<p>The stopping condition is checked at batch boundaries after at least two samples. Sampling ends when it passes or reaches the cap. RGB values are averaged over the actual sample count, which is also saved for the rate map. A batch size of zero disables adaptive stopping. The confidence interval is approximate and can miss rare bright paths.</p>
 
-		<h2>(Optional) Part 6: Extra Credit Opportunities</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-		
-		<h2>Additional Notes (please remove)</h2>
-		<ul>
-			<li>You can also add code if you'd like as so: <code>code code code</code></li>
-			<li>If you'd like to add math equations, 
-				<ul>
-					<li>You can write inline equations like so: \( a^2 + b^2 = c^2 \)</li>
-					<li>You can write display equations like so: \[ a^2 + b^2 = c^2 \]</li>
-				</ul>
-			</li>
-		</ul>
+<p>Bunny and Wall-E use a cap of 2048 samples, batches of 64, tolerance 0.05, one light sample, depth five, and roulette. Rate maps show samples used divided by the cap, from blue for fewer samples to red for more. The bunny needs more samples on the ceiling and shadowed surfaces. Wall-E has a blue background but red regions across its front panels, wheels, and eye rims. The maps show how sampling concentrates on the model while saving work in empty space.</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part5-bunny.png" alt="Bunny: adaptive global illumination, cap 2048 spp, batch 64, tolerance 0.05, 1 light sample, depth 5." width="480" height="360"/>
+				  <figcaption>Bunny: adaptive global illumination, cap 2048 spp, batch 64, tolerance 0.05, 1 light sample, depth 5.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part5-bunny_rate.png" alt="Bunny: actual sampling rate relative to the 2048-sample cap." width="480" height="360"/>
+				  <figcaption>Bunny: actual sampling rate relative to the 2048-sample cap.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table class="image-table">
+			  <tr>
+				<td>
+<figure><img src="assets/part5-wall-e.png" alt="Wall-E: adaptive global illumination, cap 2048 spp, batch 64, tolerance 0.05, 1 light sample, depth 5." width="480" height="360"/>
+				  <figcaption>Wall-E: adaptive global illumination, cap 2048 spp, batch 64, tolerance 0.05, 1 light sample, depth 5.</figcaption></figure>
+</td>
+				<td>
+<figure><img src="assets/part5-wall-e_rate.png" alt="Wall-E: actual sampling rate relative to the 2048-sample cap." width="480" height="360"/>
+				  <figcaption>Wall-E: actual sampling rate relative to the 2048-sample cap.</figcaption></figure>
+</td>
+			  </tr>
+			</table>
+		</div>
+
+<p>I used OpenAI Codex to verify results against the assignment requirements, catch bugs through code review and testing, and check that my design and architecture aligned with the course content.</p>
 		</div>
 	</body>
 </html>
